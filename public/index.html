@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kansas City Identities</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 40px 60px;
+  padding-bottom: 50vh;
+  line-height: 1.8;
+  background: #fff;
+  letter-spacing: -0.3px;
+}
+
+h1 {
+  font-size: 7.5vw;
+  color: rgba(0, 0, 0, 0.15);
+  font-weight: 700;
+  line-height: 0.9;
+  margin: 0 -60px 40px -60px;
+  padding: 0 60px;
+  white-space: nowrap;
+}
+
+.sentence {
+  font-size: 24px;
+  padding: 9px 0;
+  line-height: 1.2;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.35);
+  transition: color 0.15s ease;
+  display: flex;
+  align-items: baseline;
+}
+
+.sentence .prefix {
+  width: 100px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 6px;
+  visibility: hidden;
+}
+
+.sentence .rest {
+  flex: 1;
+}
+
+.sentence:hover {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.sentence.active {
+  color: rgba(0, 0, 0, 1);
+  font-weight: 600;
+}
+
+.sentence.active .prefix {
+  visibility: visible;
+}
+
+#fade-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50vh;
+  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 100%);
+  pointer-events: none;
+  z-index: 500;
+}
+
+#video-container {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 320px;
+  z-index: 1000;
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+#thumbnail {
+  width: 100%;
+  display: block;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: #222;
+  aspect-ratio: 16/9;
+}
+
+#thumbnail.loaded {
+  opacity: 1;
+}
+
+#thumbnail.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#player {
+  width: 100%;
+  display: block;
+  cursor: pointer;
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+#player.playing {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#loading {
+  color: rgba(0,0,0,0.3);
+  font-size: 18px;
+}
+
+@media (max-width: 768px) {
+  body { padding: 20px 15px; padding-bottom: 50vh; }
+  h1 { font-size: 13vw; margin: 0 -15px 20px -15px; padding: 0 15px; white-space: normal; }
+  .sentence { font-size: 18px; padding: 7px 0; }
+  .sentence .prefix { width: 70px; padding-right: 4px; }
+  #fade-overlay { height: 70vh; }
+  #video-container { bottom: 15px; right: auto; left: 50%; transform: translateX(-50%); width: calc(100% - 30px); max-width: 320px; }
+}
+</style>
+</head>
+<body>
+<h1>Kansas City Identities</h1>
+<div id="sentences"><p id="loading">Loading...</p></div>
+<div id="fade-overlay"></div>
+<div id="video-container">
+  <img id="thumbnail" src="" alt="">
+  <video id="player" playsinline preload="metadata"></video>
+</div>
+<script>
+const BASE_URL = "https://kc-identities.atl1.digitaloceanspaces.com";
+
+function extractPrefix(text) {
+  text = text.trim();
+  const match = text.match(/^(I am an?|I'm an?|As an?)\s+/i);
+  if (match) {
+    let prefix = match[1];
+    const rest = text.slice(match[0].length);
+    const startsWithVowel = rest && 'aeiou'.includes(rest[0].toLowerCase());
+
+    if (prefix.toLowerCase().startsWith("i'm")) {
+      prefix = startsWithVowel ? "I am an" : "I am a";
+    } else if (prefix.toLowerCase() === "i am a") {
+      prefix = startsWithVowel ? "I am an" : "I am a";
+    } else if (prefix.toLowerCase() === "i am an") {
+      prefix = startsWithVowel ? "I am an" : "I am a";
+    } else if (prefix.toLowerCase() === "as a") {
+      prefix = startsWithVowel ? "As an" : "As a";
+    } else if (prefix.toLowerCase() === "as an") {
+      prefix = startsWithVowel ? "As an" : "As a";
+    }
+    return { prefix, rest };
+  }
+  return { prefix: "", rest: text };
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function escapeHtml(text) {
+  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function init() {
+  const response = await fetch('/clips.json');
+  const clips = await response.json();
+
+  // Process and shuffle
+  clips.forEach(clip => {
+    const text = clip.phrase || clip.trigger_text || '';
+    const { prefix, rest } = extractPrefix(text);
+    clip.prefix = prefix;
+    clip.rest = rest;
+  });
+  shuffle(clips);
+
+  // Render
+  const container = document.getElementById('sentences');
+  container.innerHTML = clips.map(c => {
+    const p = escapeHtml(c.prefix || '');
+    const r = escapeHtml(c.rest || c.phrase || c.trigger_text || '');
+    return `<div class="sentence" data-id="${c.id}"><span class="prefix">${p} </span><span class="rest">${r}</span></div>`;
+  }).join('\n');
+
+  // Setup interactions
+  setupInteractions();
+}
+
+function setupInteractions() {
+  const sentences = document.querySelectorAll('.sentence');
+  const thumbnail = document.getElementById('thumbnail');
+  const player = document.getElementById('player');
+
+  let activeId = null;
+  let pendingLoadId = null;
+
+  function setActive(el) {
+    const id = el.dataset.id;
+
+    sentences.forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+
+    if (id === activeId) return;
+
+    if (pendingLoadId) {
+      clearTimeout(pendingLoadId);
+      pendingLoadId = null;
+    }
+
+    thumbnail.classList.remove('loaded');
+    player.classList.remove('playing');
+    player.pause();
+
+    pendingLoadId = setTimeout(() => {
+      const img = new Image();
+      img.onload = () => {
+        thumbnail.src = img.src;
+        player.src = `${BASE_URL}/clips/clip_${id}.mp4`;
+        thumbnail.classList.remove('hidden');
+        player.classList.remove('playing');
+        requestAnimationFrame(() => {
+          thumbnail.classList.add('loaded');
+        });
+        pendingLoadId = null;
+      };
+      img.onerror = () => {
+        thumbnail.style.background = '#333';
+        player.src = `${BASE_URL}/clips/clip_${id}.mp4`;
+        thumbnail.classList.remove('hidden');
+        player.classList.remove('playing');
+        thumbnail.classList.add('loaded');
+        pendingLoadId = null;
+      };
+      img.src = `${BASE_URL}/thumbs/${id}.jpg`;
+    }, 300);
+
+    activeId = id;
+  }
+
+  thumbnail.addEventListener('click', () => {
+    thumbnail.classList.add('hidden');
+    player.classList.add('playing');
+    player.play();
+  });
+
+  player.addEventListener('ended', () => {
+    thumbnail.classList.remove('hidden');
+    player.classList.remove('playing');
+  });
+
+  player.addEventListener('click', () => {
+    if (player.paused) {
+      thumbnail.classList.remove('hidden');
+      player.classList.remove('playing');
+    } else {
+      player.pause();
+    }
+  });
+
+  sentences.forEach(el => {
+    el.addEventListener('click', () => {
+      setActive(el);
+      const offset = 40;
+      const top = el.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top, behavior: 'smooth' });
+    });
+  });
+
+  function updateActiveOnScroll() {
+    const offset = 50;
+    let closest = null;
+    let closestDistance = Infinity;
+
+    sentences.forEach(el => {
+      const rect = el.getBoundingClientRect();
+      const distance = Math.abs(rect.top - offset);
+      if (rect.top <= offset + rect.height && distance < closestDistance) {
+        closestDistance = distance;
+        closest = el;
+      }
+    });
+
+    if (!closest && sentences.length > 0) {
+      closest = sentences[0];
+    }
+
+    if (closest && closest.dataset.id !== activeId) {
+      setActive(closest);
+    }
+  }
+
+  let scrollTicking = false;
+  window.addEventListener('scroll', () => {
+    if (!scrollTicking) {
+      requestAnimationFrame(() => {
+        updateActiveOnScroll();
+        scrollTicking = false;
+      });
+      scrollTicking = true;
+    }
+  });
+
+  if (sentences.length > 0) {
+    setActive(sentences[0]);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
